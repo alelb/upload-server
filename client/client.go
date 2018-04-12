@@ -1,0 +1,170 @@
+package main
+
+import (
+	"bytes"
+	"compress/gzip"
+	"crypto/tls"
+	"io"
+	"io/ioutil"
+	"math"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"golang.org/x/net/http2"
+)
+
+func mkClient() *http.Client {
+
+	client := &http.Client{
+		Transport: &http2.Transport{
+			DisableCompression: false,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	return client
+}
+
+func listFiles(dirname string) []os.FileInfo {
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		panic(err)
+	}
+
+	return files
+}
+
+func loadFiles(dirname string) [][]byte {
+	files := listFiles(dirname)
+	l := len(files)
+
+	var arr = make([][]byte, l)
+
+	for i, f := range files {
+		var err error
+		arr[i], err = ioutil.ReadFile(filepath.Join(dirname, f.Name()))
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	return arr
+}
+
+func uploadDirectory(files [][]byte, duration time.Duration, compression bool) int64 {
+
+	client := mkClient()
+	l := len(files)
+
+	var sleep time.Duration
+	if duration > 0 {
+		sleep = time.Duration(math.Floor(float64(duration) / float64(l)))
+	}
+
+	total := make(chan int64)
+	chunk := make(chan int64)
+
+	go func() {
+		var bytes int64
+		for i := 0; i < l; i++ {
+			bytes += <-chunk
+			// log.Println("cumulative: ", bytes)
+		}
+		total <- bytes
+	}()
+
+	for _, f := range files {
+		time.Sleep(sleep)
+		go func(f []byte) {
+			bytes := upload(client, f, compression)
+			// log.Println("uploaded bytes: ", bytes)
+			chunk <- bytes
+		}(f)
+	}
+
+	return <-total
+}
+
+func upload(client *http.Client, content []byte, compression bool) int64 {
+
+	var reader io.Reader
+
+	if compression {
+		piper, pipew := io.Pipe()
+
+		buf := bytes.NewBuffer(content)
+
+		gzipw := gzip.NewWriter(pipew)
+
+		go func() {
+			buf.WriteTo(gzipw)
+			gzipw.Close()
+			pipew.Close()
+		}()
+		defer piper.Close()
+		reader = piper
+	} else {
+		reader = bytes.NewReader(content)
+	}
+
+	req, err := http.NewRequest("POST", "https://127.0.0.1:8282/up", reader)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if compression {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	// dreq, _ := httputil.DumpRequest(req, false)
+
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer res.Body.Close()
+	// dres, _ := httputil.DumpResponse(res, true)
+
+	// fmt.Print(string(dreq))
+	// fmt.Print(string(dres))
+	// fmt.Println()
+
+	mex, _ := ioutil.ReadAll(res.Body)
+	ret, _ := strconv.ParseInt(string(mex), 10, 64)
+
+	return ret
+}
+
+func main() {
+	if len(os.Args) <= 1 {
+		return
+	}
+
+	dir := os.Args[1]
+	/* 	files := loadFiles(dir)
+
+	   	client := mkClient()
+
+	   	upload(client, files[0], true) */
+
+	uploadDirectory(loadFiles(dir), 0, true)
+
+	/* 	resp, err := client.Get("https://localhost:8282/")
+	   	if err != nil {
+	   		log.Fatal(err)
+	   	}
+
+	   	body, err := ioutil.ReadAll(resp.Body)
+	   	if err != nil {
+	   		log.Fatal(err)
+	   	}
+
+	   	fmt.Println(string(body)) */
+}

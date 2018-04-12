@@ -1,0 +1,314 @@
+syntax = "proto3";
+
+option java_package = "com.life.lifedataprotolib";
+option java_multiple_files = true;
+
+// Main Container
+message DataContainer {
+    string user_UUID = 1;
+    string detection_UUID = 2;
+    string session_UUID = 3;
+    repeated Message message = 4;
+}
+
+// Represents a wearable and its sensors
+message Wearable {
+    string device_UUID = 1;
+    string garment_type = 2;
+    repeated Sensor sensor = 3;
+}
+
+enum SensorType {
+    ACCELEROMETER_3D = 0;
+    BAROMETER = 1;
+    ELECTROCARDIOGRAM_1_CH = 2;
+    ELECTROCARDIOGRAM_8_CH = 3;
+    ELECTROENCEPHALOGRAM_1_CH = 4;
+    ELECTROENCEPHALOGRAM_2_CH = 5;
+    ELECTROMYOGRAM_1_CH = 6;
+    ELECTROOCULOGRAM_1_CH = 7;
+    ELECTROOCULOGRAM_2_CH = 8;
+    EXTERNAL_SYNC_SIGNAL = 9;
+    GPS_ACCURACY = 10;
+    GPS_ALTITUDE = 11;
+    GPS_BEARING = 12;
+    GPS_NUM_SAT_FIX = 13;
+    GPS_POSITION = 14;
+    GPS_SPEED = 15;
+    GPS_TIME_FIRST_FIX = 16;
+    GPS_UTC_TIME = 17;
+    GYROSCOPE_3D = 18;
+    MAGNETOMETER_3D = 19;
+    PACEMAKER_EVENT = 20;
+    QUATERNIONS = 21;
+    RESPIRATION_1_CH = 22;
+    RESPIRATION_3_CH = 23;
+    SKIN_ELECTRODE = 24;
+    TEMPERATURE = 25;
+    ELECTROCARDIOGRAM_2_CH = 26;
+    RESPIRATION_2_CH = 27;
+}
+
+// A sensor, identified by type and position
+message Sensor {
+    SensorType type = 1;
+    fixed32 position = 2;
+    int32 model = 3;
+}
+
+// A message can contain either an event, or data, or parameters
+// Only one of these fields should have a value at a time
+message Message {
+    enum MessageType {
+        EVENT = 0;
+        PARAMETER = 1;
+        DEVICE_SENSOR_OUTPUT = 2;
+        ONBOARD_ALGORITHM_OUTPUT = 3;
+    }
+
+    MessageType type = 1;
+    int64 timestamp = 2;
+    Event event = 3;
+    Parameter parameter = 4;
+    DeviceSensorOutput device_sensor_output = 5;
+    OnboardAlgorithmOutput onboard_algorithm_output = 6;
+    map<string, string> additional_info = 7;
+}
+
+// Output of algorithms executed by the logger
+message OnboardAlgorithmOutput {
+    // Id of the algorithm
+    string uuid = 1;
+    repeated double value = 2;
+}
+
+// Event (start/stop detection, etc...)
+message Event {
+    enum EventType {
+        START_SESSION = 0;
+        STOP_SESSION = 1;
+        START_STREAMING = 2;
+        STOP_STREAMING = 3;
+        BOOKMARK = 4;
+    }
+
+    EventType type = 1;
+    double latitude = 2;
+    double longitude = 3;
+    string label = 4;
+    string device_UUID = 5;
+    string experience_UUID = 6;
+    repeated Wearable wearable = 7;
+}
+
+// Parameter (for example: calibration parameter)
+message Parameter {
+    enum ParameterType {
+        DISCRETE = 0;
+        CONTINUOUS = 1;
+    }
+
+    // Id of the parameter
+    int32 id = 1;
+    ParameterType type = 2;
+    Sensor sensor = 3;
+    repeated double value = 4;
+}
+
+// Data produced by a sensor
+message DeviceSensorOutput {
+    // The sensor that has produced the data
+    Sensor sensor = 1;
+
+    // Only one of the following fields has a value: currently it isn't
+    // possible to send multiple sensor data in the same message
+    // The "type" field in "sensor" can be used to know which
+    // of the fields has a value
+    Accelerometer3DValue accelerometer_3D = 2;
+    BarometerValue barometer = 3;
+    Electrocardiogram1ChValue electrocardiogram_1_ch = 4;
+    Electrocardiogram8ChValue electrocardiogram_8_ch = 5;
+    Electroencephalogram1ChValue electroencephalogram_1_ch = 6;
+    Electroencephalogram2ChValue electroencephalogram_2_ch = 7;
+    Electromyogram1ChValue electromyogram_1_ch = 8;
+    Electrooculogram1ChValue electrooculogram_1_ch = 9;
+    Electrooculogram2ChValue electrooculogram_2_ch = 10;
+    ExternalSyncSignalValue external_sync_signal = 11;
+    GPSAccuracyValue gps_accuracy = 12;
+    GPSAltitudeValue gps_altitude = 13;
+    GPSBearingValue gps_bearing = 14;
+    GPSNumSatFixValue gps_num_sat_fix = 15;
+    GPSPositionValue gps_position = 16;
+    GPSSpeedValue gps_speed = 17;
+    GPSTimeFirstFixValue gps_time_first_fix = 18;
+    GPSUTCTimeValue gps_UTC_time = 19;
+    Gyroscope3DValue gyroscope_3D = 20;
+    Magnetometer3DValue magnetometer_3D = 21;
+    PacemakerValue pacemaker_value = 22;
+    QuaternionsValue quaternions = 23;
+    Respiration1ChValue respiration_1_ch = 24;
+    Respiration3ChValue respiration_3_ch = 25;
+    SkinElectrodeValue skin_electrode = 26;
+    TemperatureValue temperature = 27;
+    Electrocardiogram2ChValue electrocardiogram_2_ch = 28;
+    Respiration2ChValue respiration_2_ch = 29;
+}
+
+// All messages that follow represent possible sensor types and the
+// values that can be output by those sensors
+message Accelerometer3DValue {
+    double x_cal = 1;
+    double y_cal = 2;
+    double z_cal = 3;
+    double x_eng = 4;
+    double y_eng = 5;
+    double z_eng = 6;
+}
+
+message BarometerValue {
+    double value_eng = 1;
+}
+
+message Electrocardiogram1ChValue {
+    double value_eng = 1;
+    double value_cal = 2;
+}
+
+message Electrocardiogram2ChValue {
+    double c1_cal = 1;
+    double c2_cal = 2;
+    double c1_eng = 3;
+    double c2_eng = 4;
+}
+
+message Electrocardiogram8ChValue {
+    double v1_eng = 1;
+    double v2_eng = 2;
+    double v3_eng = 3;
+    double v4_eng = 4;
+    double v5_eng = 5;
+    double v6_eng = 6;
+    double l1_eng = 7;
+    double l2_eng = 8;
+    double v1_cal = 9;
+    double v2_cal = 10;
+    double v3_cal = 11;
+    double v4_cal = 12;
+    double v5_cal = 13;
+    double v6_cal = 14;
+    double l1_cal = 15;
+    double l2_cal = 16;
+}
+
+message Electroencephalogram1ChValue {
+    double value_eng = 1;
+}
+
+message Electroencephalogram2ChValue {
+    double value_ch1_eng = 1;
+    double value_ch2_eng = 2;
+}
+
+message Electromyogram1ChValue {
+    double value_cal = 1;
+    double value_eng = 2;
+}
+
+message Electrooculogram1ChValue {
+    double value_eng = 1;
+}
+
+message Electrooculogram2ChValue {
+    double value_ch1_eng = 1;
+    double value_ch2_eng = 2;
+}
+
+message ExternalSyncSignalValue {
+    int32 value_eng = 1;
+}
+
+message GPSAccuracyValue {
+    double accuracy_eng = 1;
+}
+
+message GPSAltitudeValue {
+    double altitude_eng = 1;
+}
+
+message GPSBearingValue {
+    double bearing_eng = 1;
+}
+
+message GPSNumSatFixValue {
+    int32 value_eng = 1;
+}
+
+message GPSPositionValue {
+    double longitude_eng = 1;
+    double latitude_eng = 2;
+}
+
+message GPSSpeedValue {
+    double speed_eng = 1;
+}
+
+message GPSTimeFirstFixValue {
+    int32 value_eng = 1;
+}
+
+message GPSUTCTimeValue {
+    int64 utc_time_eng = 1;
+}
+
+message Gyroscope3DValue {
+    double x_cal = 1;
+    double y_cal = 2;
+    double z_cal = 3;
+    double x_eng = 4;
+    double y_eng = 5;
+    double z_eng = 6;
+}
+
+message Magnetometer3DValue {
+    double x_cal = 1;
+    double y_cal = 2;
+    double z_cal = 3;
+    double x_eng = 4;
+    double y_eng = 5;
+    double z_eng = 6;
+}
+
+message PacemakerValue {
+    int32 value_eng = 1;
+}
+
+message QuaternionsValue {
+    double q0_eng = 1;
+    double q1_eng = 2;
+    double q2_eng = 3;
+    double q3_eng = 4;
+}
+
+message Respiration1ChValue {
+    double value_eng = 1;
+}
+
+message Respiration2ChValue {
+    double value_ch1_eng = 1;
+    double value_ch2_eng = 2;
+}
+
+message Respiration3ChValue {
+    double value_ch1_eng = 1;
+    double value_ch2_eng = 2;
+    double value_ch3_eng = 3;
+}
+
+message SkinElectrodeValue {
+    double value_eng = 1;
+}
+
+message TemperatureValue {
+    double value_eng = 1;
+    double value_cal = 2;
+}
