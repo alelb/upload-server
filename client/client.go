@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/md5"
 	"crypto/tls"
+	"encoding/hex"
 	"io"
 	"io/ioutil"
 	"math"
@@ -11,10 +13,17 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/http2"
 )
+
+type Package struct {
+	content  []byte
+	sequence string
+	checksum string
+}
 
 func mkClient() *http.Client {
 
@@ -39,24 +48,28 @@ func listFiles(dirname string) []os.FileInfo {
 	return files
 }
 
-func loadFiles(dirname string) [][]byte {
+func loadFiles(dirname string) []Package {
+
 	files := listFiles(dirname)
 	l := len(files)
 
-	var arr = make([][]byte, l)
+	var arr = make([]Package, l)
 
 	for i, f := range files {
 		var err error
-		arr[i], err = ioutil.ReadFile(filepath.Join(dirname, f.Name()))
+		content, err := ioutil.ReadFile(filepath.Join(dirname, f.Name()))
 		if err != nil {
 			panic(err)
 		}
+		name := f.Name()
+		sequence := getSequence(name)
+		arr[i] = newPackage(content, sequence)
 	}
 
 	return arr
 }
 
-func uploadDirectory(files [][]byte, duration time.Duration, compression bool) int64 {
+func uploadDirectory(files []Package, duration time.Duration, compression bool) int64 {
 
 	client := mkClient()
 	l := len(files)
@@ -80,8 +93,8 @@ func uploadDirectory(files [][]byte, duration time.Duration, compression bool) i
 
 	for _, f := range files {
 		time.Sleep(sleep)
-		go func(f []byte) {
-			bytes := upload(client, f, compression)
+		go func(f Package) {
+			bytes := upload(client, f.content, compression, f.sequence, f.checksum)
 			// log.Println("uploaded bytes: ", bytes)
 			chunk <- bytes
 		}(f)
@@ -90,7 +103,7 @@ func uploadDirectory(files [][]byte, duration time.Duration, compression bool) i
 	return <-total
 }
 
-func upload(client *http.Client, content []byte, compression bool) int64 {
+func upload(client *http.Client, content []byte, compression bool, sequence string, checksum string) int64 {
 
 	var reader io.Reader
 
@@ -113,6 +126,8 @@ func upload(client *http.Client, content []byte, compression bool) int64 {
 	}
 
 	req, err := http.NewRequest("POST", "https://127.0.0.1:8282/up", reader)
+	req.Header.Set("sequence", sequence)
+	req.Header.Set("checksum", checksum)
 
 	if err != nil {
 		panic(err)
@@ -167,4 +182,33 @@ func main() {
 	   	}
 
 	   	fmt.Println(string(body)) */
+}
+
+func checksum(content []byte) string {
+	hasher := md5.New()
+	hasher.Write(content)
+	ck := hex.EncodeToString(hasher.Sum(nil))
+
+	return ck
+}
+
+func newPackage(content []byte, sequence string) Package {
+
+	p := Package{
+		content:  content,
+		sequence: sequence,
+		checksum: checksum(content),
+	}
+
+	return p
+}
+
+func getSequence(name string) string {
+
+	a := strings.Split(name, "@")
+	if len(a) != 2 {
+		panic("Error")
+	}
+
+	return a[1]
 }

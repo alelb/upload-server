@@ -1,6 +1,7 @@
 **/*.pem
 
 data/
+storage/
 
 **/*pb.go
 
