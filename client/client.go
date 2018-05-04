@@ -126,7 +126,8 @@ func upload(client *http.Client, content []byte, compression bool, sequence stri
 	}
 
 	req, err := http.NewRequest("POST", "https://127.0.0.1:8282/up", reader)
-	req.Header.Set("sequence", sequence)
+	req.Header.Set("TOTAL_FILE_COUNT", "17")
+	req.Header.Set("CURRENT_FILE_COUNTER", sequence)
 	req.Header.Set("checksum", checksum)
 
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 	"upload/message"
 
@@ -107,7 +108,7 @@ func (c *controller) ChecksumExists() Middleware {
 			// Check the checksum header
 			if r.Header.Get("checksum") == "" {
 				c.logger.Println("Checksum does not exist")
-				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				responseWithError(&w, http.StatusInternalServerError, message.MissingHeaderCRC, "")
 				return
 			}
 
@@ -115,6 +116,75 @@ func (c *controller) ChecksumExists() Middleware {
 			f(w, r)
 		}
 	}
+}
+
+// Method ensures that the coming request has a valid total file count header
+func (c *controller) TotalFileCountExists() Middleware {
+
+	// Create a new Middleware
+	return func(f http.HandlerFunc) http.HandlerFunc {
+
+		// Define the http.HandlerFunc
+		return func(w http.ResponseWriter, r *http.Request) {
+
+			// Check the total file count header
+			if r.Header.Get("TOTAL_FILE_COUNT") == "" {
+				c.logger.Println("Total file count does not exist")
+				responseWithError(&w, http.StatusInternalServerError, message.MissingHeaderTotalFileCount, "")
+				return
+			}
+
+			// Call the next middleware/handler in chain
+			f(w, r)
+		}
+	}
+}
+
+// Method ensures that the coming request has a valid current file counter header
+func (c *controller) CurrentFileCounterExists() Middleware {
+
+	// Create a new Middleware
+	return func(f http.HandlerFunc) http.HandlerFunc {
+
+		// Define the http.HandlerFunc
+		return func(w http.ResponseWriter, r *http.Request) {
+
+			// Check the total file count header
+			if r.Header.Get("CURRENT_FILE_COUNTER") == "" {
+				c.logger.Println("Current file counter does not exist")
+				responseWithError(&w, http.StatusInternalServerError, message.MissingHeaderCurrentFileCounter, "")
+				return
+			}
+
+			// Call the next middleware/handler in chain
+			f(w, r)
+		}
+	}
+}
+
+// Method ensure that the coming request has the current file counter within the total file count
+func (c *controller) CountingCheck() Middleware {
+
+	// Create a new Middleware
+	return func(f http.HandlerFunc) http.HandlerFunc {
+
+		// Define the http.HandlerFunc
+		return func(w http.ResponseWriter, r *http.Request) {
+
+			current, _ := strconv.Atoi(r.Header.Get("CURRENT_FILE_COUNTER"))
+			count, _ := strconv.Atoi(r.Header.Get("TOTAL_FILE_COUNT"))
+
+			if current > count {
+				c.logger.Println("Counting error")
+				responseWithError(&w, http.StatusInternalServerError, message.CountingError, "CURRENT_FILE_COUNTER greater than TOTAL_FILE_COUNTER")
+				return
+			}
+
+			// Call the next middleware/handler in chain
+			f(w, r)
+		}
+	}
+
 }
 
 func (c *controller) Checksum() Middleware {
@@ -180,37 +250,37 @@ func readContent(r *http.Request) *bytes.Buffer {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 
-	sequence := r.Header.Get("sequence")
+	current := r.Header.Get("CURRENT_FILE_COUNTER")
 	checksum := r.Header.Get("checksum")
-
-	if sequence == "" {
-		panic("Error. Sequence header is missing")
-	}
-	if checksum == "" {
-		panic("Error. checksum header is missing")
-	}
 
 	buf := readContent(r)
 	s := buf.String()
 
 	if !check(buf.Bytes(), checksum) {
-		handleChecksumError(&w)
+		responseWithError(&w, http.StatusInternalServerError, message.ChecksumFail, "")
 		return
 	}
 
 	// Create an struct pointer of type DataContainer struct
 	protodata := new(pb.DataContainer)
 	// Convert all the data retrieved into the DataContainer struct type
-	errProto := proto.Unmarshal([]byte(s), protodata)
-	checkError(errProto)
+	err := proto.Unmarshal([]byte(s), protodata)
+	if err != nil {
+		responseWithError(&w, http.StatusInternalServerError, message.ParseError, err.Error())
+		return
+	}
 
 	detectionUUID := protodata.GetDetection_UUID()
-	filename := fmt.Sprintf("%s@%s", detectionUUID, sequence)
+	createDirIfNotExist(fmt.Sprintf("../storage/%s", detectionUUID))
 
-	err := ioutil.WriteFile(fmt.Sprintf("../storage/%s", filename), buf.Bytes(), 0644)
-	checkError(err)
+	filename := fmt.Sprintf("%s@%s", detectionUUID, current)
+	err = ioutil.WriteFile(fmt.Sprintf("../storage/%s/%s", detectionUUID, filename), buf.Bytes(), 0644)
+	if err != nil {
+		responseWithError(&w, http.StatusInternalServerError, message.ErrorSlug, err.Error())
+		return
+	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func main() {
@@ -240,6 +310,9 @@ func main() {
 		c.Method("POST"),
 		c.Logging(),
 		c.ChecksumExists(),
+		c.TotalFileCountExists(),
+		c.CurrentFileCounterExists(),
+		c.CountingCheck(),
 		/* 		c.Checksum(), */
 	),
 	)
@@ -261,11 +334,20 @@ func check(content []byte, ck string) bool {
 	return checksum(content) == ck
 }
 
-func handleChecksumError(w *http.ResponseWriter) {
-	e := message.NewError(http.StatusBadRequest, "A Checksum error occurred")
-	b, err := json.Marshal(e)
-	checkError(err)
+func responseWithError(w *http.ResponseWriter, codeNumber int, code string, text string) {
+	(*w).WriteHeader(codeNumber)
+	byt, err := json.Marshal(message.NewError(code, text))
+	if err != nil {
+		panic(err)
+	}
+	(*w).Write(byt)
+}
 
-	(*w).WriteHeader(http.StatusBadRequest)
-	(*w).Write(b)
+func createDirIfNotExist(dir string) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err = os.MkdirAll(dir, 0755)
+		if err != nil {
+			panic(err)
+		}
+	}
 }
